@@ -11,6 +11,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^1.1.0",
     "ai": "^4.1.0",
+    "firebase": "^11.2.0",
+    "firebase-admin": "^13.0.2",
     "next": "15.1.5",
     "openai": "^4.79.2",
     "react": "^19.0.0",
