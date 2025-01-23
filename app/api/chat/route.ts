@@ -1,93 +1,48 @@
-import { AssistantResponse, tool } from "ai";
-import Request, { NextApiRequest, NextApiResponse } from "next";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
-
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
-
-const ASSISTANT_ID = "asst_wRwVrGgfTmFee8Njh2sgqxGH";
-
-interface CustomRequest extends NextApiRequest {
-  threadId: string;
-  message: string;
-}
-
-interface ResponseData {
-  message: string;
-}
+import { db, getUser, newMessageExists } from "@/utils/firebase";
+import { handleBotInteraction } from "@/utils/openai";
 
 export async function POST(req: Request) {
-  // Parse the request body
-  // const { threadId, message } = req.body;
-
-  const input: {
-    threadId: string;
+  const {
+    waid,
+    message,
+  }: {
+    waid: string;
     message: string;
   } = await req.json();
 
-  console.log(req);
-  console.log(input);
-  // Create a thread if needed
-  const threadId = input.threadId ?? (await openai.beta.threads.create({})).id;
+  const now = new Date().toISOString();
 
-  console.log("Thread id:", threadId);
-
-  // Add a message to the thread
-  const createdMessage = await openai.beta.threads.messages.create(threadId, {
-    role: "user",
-    content: input.message,
+  const addedMessage = await db.collection("mensajes").add({
+    waid,
+    message,
+    date: now,
   });
 
-  // let run = await openai.beta.threads.runs.createAndPoll(threadId, {
-  //   assistant_id: ASSISTANT_ID,
-  // });
-  let run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: ASSISTANT_ID,
-  });
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 
-  // handleRunStatus(run, threadId);
+  const foundNewMessages = await newMessageExists(waid, now);
 
-  let status = "";
-  while (status != "completed") {
-    let currentRun = await openai.beta.threads.runs.retrieve(threadId, run.id);
+  if (!foundNewMessages) {
+    const currentUser = await getUser(waid);
 
-    console.log(currentRun.status);
-    status = currentRun.status;
-
-    if (status === "requires_action") {
-      const toolOutputs = await handleRequiresAction(currentRun, threadId);
-      currentRun = await openai.beta.threads.runs.submitToolOutputs(
-        threadId,
-        run.id,
-        { tool_outputs: toolOutputs }
-      );
-      console.log(run);
+    let botResponse;
+    if (currentUser?.threadId) {
+      botResponse = await handleBotInteraction(message, currentUser.threadId);
+    } else {
+      botResponse = await handleBotInteraction(message);
     }
 
-    // if(status === "requires_action"){
-    //   await openai.beta.threads.runs.submitToolOutputs(
-    //   "thread_123",
-    //   "run_123", {
-    //     tool_outputs: [{tool_call_id: "", output: ""}]
-    //   })
-    // }
+    // Add a message to the thread
+
+    const botMessage = botResponse.message.text.value;
+    const threadId = botResponse.threadId;
+
+    // if doesnt exist threadId then add it
+
+    return new Response(JSON.stringify(botMessage), { status: 200 });
   }
 
-  const botAnswer = await openai.beta.threads.messages.list(threadId, {
-    order: "desc",
-    limit: 1,
-  });
-
-  const botAnswerMsg: any = botAnswer.data[0].content[0];
-
-  const value = botAnswerMsg.text.value;
-
-  return new Response(JSON.stringify(botAnswerMsg));
-
+  return new Response(JSON.stringify(""), { status: 200 });
   // return AssistantResponse(
   //   { threadId, messageId: createdMessage.id },
   //   async ({ forwardStream, sendDataMessage }) => {
@@ -135,46 +90,4 @@ export async function POST(req: Request) {
   //     }
   //   }
   // );
-}
-
-async function handleRequiresAction(run: any, threadId: string): Promise<any> {
-  // Check if there are tools that require outputs
-  if (
-    run.required_action &&
-    run.required_action.submit_tool_outputs &&
-    run.required_action.submit_tool_outputs.tool_calls
-  ) {
-    // Loop through each tool in the required action section
-    console.log(
-      "ACA ES PA: ",
-      run.required_action.submit_tool_outputs.tool_calls
-    );
-    const toolOutputs = run.required_action.submit_tool_outputs.tool_calls.map(
-      (tool: any) => {
-        if (tool.function.name === "obtenerDatosUsuario") {
-          console.log(tool.function);
-          const { waNumber } = tool.function.arguments;
-          return {
-            tool_call_id: tool.id,
-            output:
-              "El usuario se llama Walter, tienes 20 años y 0 consultas al médico pendientes.",
-          };
-        }
-        // } else if (tool.function.name === "getRainProbability") {
-        //   return {
-        //     tool_call_id: tool.id,
-        //     output: "0.06",
-        //   };
-        // }
-      }
-    );
-
-    // Submit all tool outputs at once after collecting them in a list
-    if (toolOutputs.length > 0) {
-      return toolOutputs;
-    } else {
-      console.log("No tool outputs to submit.");
-      return null;
-    }
-  }
 }
