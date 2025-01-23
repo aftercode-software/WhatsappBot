@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({
+export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
 });
 
@@ -13,11 +13,11 @@ interface BotResponse {
 
 export async function handleBotInteraction(
   message: string,
-  existingThreadId?: string
+  threadId: string
 ): Promise<BotResponse> {
   // Create or use existing thread
-  const threadId =
-    existingThreadId || (await openai.beta.threads.create({})).id;
+  // const threadId =
+  //   existingThreadId || (await openai.beta.threads.create({})).id;
 
   // Add user message to thread
   await openai.beta.threads.messages.create(threadId, {
