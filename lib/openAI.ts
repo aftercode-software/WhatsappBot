@@ -1,3 +1,5 @@
+import { Cliente } from "@/models/cliente";
+import { getUser, updateUser } from "@/services/user";
 import OpenAI from "openai";
 
 export const openai = new OpenAI({
@@ -8,17 +10,39 @@ const ASSISTANT_ID = "asst_wRwVrGgfTmFee8Njh2sgqxGH";
 
 interface BotResponse {
   message: any;
+  waid: string;
   threadId: string;
 }
 
 export async function handleBotInteraction(
   message: string,
+  waid: string,
   threadId: string
 ): Promise<BotResponse> {
-  // Create or use existing thread
-  // const threadId =
-  //   existingThreadId || (await openai.beta.threads.create({})).id;
-
+  await openai.beta.threads.messages.create(threadId, {
+    role: "assistant",
+    content: `Si necesitas la hora actual en Argentina es ${new Date().toLocaleDateString(
+      "es-AR",
+      {
+        timeZone: "America/Argentina/Buenos_Aires",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    )}`,
+  });
+  console.log(
+    new Date().toLocaleDateString("es-AR", {
+      timeZone: "America/Argentina/Buenos_Aires",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  );
   // Add user message to thread
   await openai.beta.threads.messages.create(threadId, {
     role: "user",
@@ -46,12 +70,14 @@ export async function handleBotInteraction(
         });
         return {
           message: messages.data[0].content[0],
+          waid,
           threadId: threadId,
         };
 
       case "requires_action":
         if (currentRun.required_action?.submit_tool_outputs?.tool_calls) {
           const toolOutputs = await handleToolCalls(
+            waid,
             currentRun.required_action.submit_tool_outputs.tool_calls
           );
 
@@ -72,13 +98,56 @@ export async function handleBotInteraction(
   }
 }
 
-async function handleToolCalls(toolCalls: any[]): Promise<any[]> {
+async function handleToolCalls(waid: string, toolCalls: any[]): Promise<any[]> {
   return toolCalls.map((toolCall: any) => {
-    if (toolCall.function.name === "obtenerDatosUsuario") {
+    const { name, arguments: args } = toolCall.function;
+
+    if (name === "obtenerDatosUsuario") {
+      let cliente = getUser(waid);
       return {
         tool_call_id: toolCall.id,
-        output:
-          "El usuario se llama Walter, tiene 20 años y 0 consultas al médico pendientes.",
+        output: JSON.stringify({
+          success: true,
+          output: cliente,
+        }),
+      };
+    }
+    if (name === "actualizarDatosUsuario") {
+      const updatedClient: Partial<Cliente> = {
+        waid,
+      };
+
+      const convertedArgs = JSON.parse(args);
+
+      if (convertedArgs.nombre) updatedClient.nombre = convertedArgs.nombre;
+      if (convertedArgs.apellido)
+        updatedClient.apellido = convertedArgs.apellido;
+      if (convertedArgs.obraSocial)
+        updatedClient.obraSocial = convertedArgs.obraSocial;
+      console.log("Nombre: ", args.nombre, typeof args.nombre);
+      console.log("Apellido: ", args.apellido, typeof args.apellido);
+      console.log("ObraSocial: ", args.obraSocial, typeof args.obraSocial);
+      console.log("Actualizando datos del usuario por: ", args);
+
+      const update = updateUser(updatedClient);
+
+      return {
+        tool_call_id: toolCall.id,
+        output: JSON.stringify({
+          success: true,
+          output: "Los datos del usuario han sido actualizados correctamente.",
+        }),
+      };
+    }
+    if (name === "pedirTurno") {
+      console.log(args);
+
+      return {
+        tool_call_id: toolCall.id,
+        output: JSON.stringify({
+          success: true,
+          output: "Turno pedido correctamente.",
+        }),
       };
     }
     throw new Error(`Unhandled tool call: ${toolCall.function.name}`);

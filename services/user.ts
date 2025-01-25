@@ -17,3 +17,16 @@ export async function createUser(waid: string, threadId: string) {
   });
   return clienteRef;
 }
+
+export async function updateUser(user: Partial<Cliente>) {
+  if (!user.waid) return null;
+
+  console.log("Usuario: ", user);
+
+  const response = db
+    .collection("clientes")
+    .doc(user.waid)
+    .set(user, { merge: true });
+
+  return response;
+}
